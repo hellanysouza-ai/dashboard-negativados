@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <style>
 :root {
   --purple:#3D1F52; --purple2:#5A2D82; --gold:#C9913A; --gold2:#E8B05A;
@@ -117,6 +118,15 @@ table.main-tbl tbody td{padding:8px 12px;border-bottom:1px solid var(--g2);white
 .badge-rio{background:var(--rio-bg);color:var(--rio);} .badge-sp{background:var(--sp-bg);color:var(--sp);}
 td.negative{color:var(--red);font-weight:700;}
 
+/* TABLE EXPORT BTN */
+.btn-table-export {
+  display: flex; align-items: center; gap: 6px;
+  background: #1E7A4A; color: #fff; border: none; border-radius: 7px;
+  padding: 8px 14px; font-size: 12px; font-weight: 700;
+  font-family: Arial, sans-serif; cursor: pointer; white-space: nowrap;
+}
+.btn-table-export:hover { opacity: .85; }
+
 /* LOADER */
 #loader{display:none;position:fixed;inset:0;background:rgba(61,31,82,.7);z-index:99;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#fff;font-size:15px;font-weight:700;}
 #loader.show{display:flex;}
@@ -189,7 +199,13 @@ td.negative{color:var(--red);font-weight:700;}
   <!-- FULL TABLE -->
   <div class="table-section">
     <div class="table-header">
-      <h3>Todos os Corretores Negativados</h3>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h3>Todos os Corretores Negativados</h3>
+        <button class="btn-table-export" onclick="exportTableExcel()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Exportar filtro atual
+        </button>
+      </div>
       <div class="filters">
         <input type="text" id="search" placeholder="🔍  Buscar corretor ou assistente…">
         <select id="filter-asst"><option value="">Todos os assistentes</option></select>
@@ -618,7 +634,154 @@ function exportExcel() {
   XLSX.writeFile(wb,`Negativados_${mesRef.replace('/','_')}.xlsx`);
 }
 
-// ── BOOT ──────────────────────────────────────────────────────────────────────
+// ── EXPORT TABLE (filtered view) ─────────────────────────────────────────────
+async function exportTableExcel() {
+  let rows = ALL_ROWS.filter(r => {
+    const q = filterSearch.toLowerCase();
+    return (!q || r.C.toLowerCase().includes(q) || r.A.toLowerCase().includes(q) || r.L.toLowerCase().includes(q))
+      && (!filterAsst   || r.A === filterAsst)
+      && (!filterLoja   || r.L === filterLoja)
+      && (!filterRegion || r.R === filterRegion);
+  });
+  rows = rows.sort((a,b) => {
+    let av=a[sortCol], bv=b[sortCol];
+    return (typeof av==='number' ? av-bv : String(av).localeCompare(String(bv))) * sortDir;
+  });
+  if (rows.length === 0) { alert('Nenhum registro para exportar.'); return; }
+
+  document.getElementById('loader').classList.add('show');
+
+  try {
+    const mesRef = getMesRef();
+    const filterDesc = [
+      filterAsst   ? 'Assistente: ' + filterAsst   : null,
+      filterLoja   ? 'Loja: '       + filterLoja    : null,
+      filterRegion ? 'Região: '     + filterRegion  : null,
+      filterSearch ? 'Busca: "'     + filterSearch + '"' : null,
+    ].filter(Boolean).join(' | ') || 'Todos os registros';
+
+    const wb  = new ExcelJS.Workbook();
+    const ws  = wb.addWorksheet('Negativados');
+
+    // ── Colors ────────────────────────────────────────────────────────────
+    const PURPLE = '3D1F52', GOLD = 'C9913A', WHITE = 'FFFFFFFF';
+    const RED    = 'C0392B', RIO  = 'D4E6F1', SP    = 'D5F5E3';
+    const ALT    = 'EDE9F4';
+    const RIO_TXT= '2471A3', SP_TXT = '1E8449';
+
+    // ── Col widths ─────────────────────────────────────────────────────────
+    ws.columns = [
+      { width: 46 }, { width: 26 }, { width: 29 },
+      { width: 9  }, { width: 22 }, { width: 14 },
+    ];
+
+    // ── Title row ─────────────────────────────────────────────────────────
+    ws.addRow(['RELATÓRIO DE NEGATIVADOS — AFFINITY CORRETORA','','','','','']);
+    ws.mergeCells('A1:F1');
+    const titleCell = ws.getCell('A1');
+    titleCell.font  = { bold:true, color:{argb:WHITE}, name:'Arial', size:13 };
+    titleCell.fill  = { type:'pattern', pattern:'solid', fgColor:{argb:'FF'+PURPLE} };
+    titleCell.alignment = { vertical:'middle', horizontal:'left' };
+    ws.getRow(1).height = 26;
+
+    // ── Meta rows ─────────────────────────────────────────────────────────
+    const metaData = [
+      ['Período de referência:', mesRef],
+      ['Filtro aplicado:', filterDesc],
+      ['Total de registros:', rows.length],
+      ['Gerado em:', new Date().toLocaleDateString('pt-BR')],
+    ];
+    metaData.forEach(([label, val]) => {
+      const r = ws.addRow([label, val, '', '', '', '']);
+      ws.mergeCells(`B${r.number}:F${r.number}`);
+      r.getCell(1).font = { bold:true, color:{argb:'FF'+PURPLE}, name:'Arial', size:9 };
+      r.getCell(1).fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F1F8'} };
+      r.getCell(2).font = { color:{argb:'FF1E1228'}, name:'Arial', size:9 };
+      r.getCell(2).fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFF4F1F8'} };
+      r.height = 16;
+    });
+
+    // ── Blank row ─────────────────────────────────────────────────────────
+    ws.addRow([]);
+
+    // ── Column header row ─────────────────────────────────────────────────
+    const colLabels = ['Corretor','Assistente','Loja','Região','Saldo Líquido (R$)','Baixados até'];
+    const hdrRow = ws.addRow(colLabels);
+    hdrRow.height = 22;
+    hdrRow.eachCell(cell => {
+      cell.font      = { bold:true, color:{argb:WHITE}, name:'Arial', size:10 };
+      cell.fill      = { type:'pattern', pattern:'solid', fgColor:{argb:'FF'+PURPLE} };
+      cell.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+      cell.border    = { bottom:{ style:'medium', color:{argb:'FF'+GOLD} } };
+    });
+
+    // ── Data rows ─────────────────────────────────────────────────────────
+    const thinBorder = {
+      top:    { style:'thin', color:{argb:'FFCFC8E0'} },
+      bottom: { style:'thin', color:{argb:'FFCFC8E0'} },
+      left:   { style:'thin', color:{argb:'FFCFC8E0'} },
+      right:  { style:'thin', color:{argb:'FFCFC8E0'} },
+    };
+
+    rows.forEach((r, i) => {
+      const isAlt  = i % 2 === 1;
+      const isRio  = r.R === 'RIO';
+      const isSp   = r.R === 'SP';
+      const isNeg  = r.V < 0;
+      const bgHex  = isAlt ? ALT : 'FFFFFF';
+      const bgArgb = 'FF' + bgHex;
+
+      const dr = ws.addRow([r.C, r.A, r.L, r.R, r.V, r.D]);
+      dr.height = 16;
+
+      // Base style for text cells
+      [1,2,3,6].forEach(ci => {
+        const c = dr.getCell(ci);
+        c.font      = { name:'Arial', size:9, color:{argb:'FF1E1228'} };
+        c.fill      = { type:'pattern', pattern:'solid', fgColor:{argb:bgArgb} };
+        c.border    = thinBorder;
+        c.alignment = { vertical:'middle' };
+      });
+
+      // Region cell - colored text + bold
+      const regCell = dr.getCell(4);
+      regCell.font      = { name:'Arial', size:9, bold:true,
+                            color:{argb:'FF'+(isRio?RIO_TXT:SP_TXT)} };
+      regCell.fill      = { type:'pattern', pattern:'solid',
+                            fgColor:{argb:'FF'+(isRio?RIO:SP)} };
+      regCell.border    = thinBorder;
+      regCell.alignment = { vertical:'middle', horizontal:'center' };
+
+      // Saldo cell - red if negative, right aligned, number format
+      const saldoCell = dr.getCell(5);
+      saldoCell.font      = { name:'Arial', size:9, bold:isNeg,
+                              color:{argb:'FF'+(isNeg?RED:'1E1228')} };
+      saldoCell.fill      = { type:'pattern', pattern:'solid', fgColor:{argb:bgArgb} };
+      saldoCell.border    = thinBorder;
+      saldoCell.alignment = { vertical:'middle', horizontal:'right' };
+      saldoCell.numFmt    = 'R$ #,##0.00';
+    });
+
+    // ── Download ──────────────────────────────────────────────────────────
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob   = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement('a');
+    const safeName = filterAsst ? filterAsst.split(' ')[0] : filterRegion || 'Todos';
+    a.href     = url;
+    a.download = `Negativados_${mesRef.replace('/','_')}_${safeName}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+  } catch(err) {
+    console.error(err);
+    alert('Erro ao gerar Excel: ' + err.message);
+  }
+
+  document.getElementById('loader').classList.remove('show');
+}
+
+// ── BOOT// ── BOOT// ── BOOT ──────────────────────────────────────────────────────────────────────
 ALL_ROWS = D.rows.map(r=>{return {C:r.C,A:r.A,L:r.L,R:r.R,V:r.V,D:r.D};});
 populateFilters(ALL_ROWS);
 renderKPIs(D.kpis);
