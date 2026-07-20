@@ -237,6 +237,7 @@ const D = {"kpis": {"total": 1775, "rio": 741, "sp": 1034, "saldo": -10240881.75
 
 let ALL_ROWS = [];
 let charts = {};
+let CURRENT = null; // holds live summary after upload
 let sortCol = 'V', sortDir = 1;
 let filterSearch = '', filterAsst = '', filterLoja = '', filterRegion = '';
 
@@ -252,7 +253,7 @@ function fmtShort(v) {
   return fmtVal(v);
 }
 function getMesRef() {
-  const labels = D.monthly_labels;
+  const labels = (CURRENT && CURRENT.monthly_labels) ? CURRENT.monthly_labels : D.monthly_labels;
   const last = labels[labels.length-1];
   const [y,m] = last.split('-');
   const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -416,6 +417,7 @@ document.getElementById('file-input').addEventListener('change', async function(
       });
       populateFilters(rows);
       const s = computeSummary(rows);
+      CURRENT = s; // store live summary for exports
       renderKPIs(s.kpis); renderCharts(s);
       renderAccordion(s.accordion_rio,'body-rio','RIO');
       renderAccordion(s.accordion_sp,'body-sp','SP');
@@ -520,6 +522,7 @@ document.querySelectorAll('table.main-tbl thead th[data-col]').forEach(th=>{
 // ── EXPORT PDF ────────────────────────────────────────────────────────────────
 async function exportPDF() {
   const { jsPDF } = window.jspdf;
+  const SRC = CURRENT || D;
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   const mesRef = getMesRef();
   const W=210, margin=14;
@@ -537,7 +540,7 @@ async function exportPDF() {
   // KPI cards
   doc.setTextColor(61,31,82); doc.setFontSize(10); doc.setFont('helvetica','bold');
   doc.text('RESUMO EXECUTIVO',margin,y); y+=6;
-  const k=D.kpis;
+  const k=SRC.kpis;
   const kpiData=[
     {label:'Total Negativados',value:k.total.toLocaleString('pt-BR'),color:[61,31,82]},
     {label:'Saldo Total (R$)',value:fmtVal(k.saldo),color:[192,57,43]},
@@ -559,7 +562,7 @@ async function exportPDF() {
   // Ranking
   doc.setTextColor(61,31,82); doc.setFontSize(10); doc.setFont('helvetica','bold');
   doc.text('RANKING — ASSISTENTES COM MAIOR SALDO NEGATIVO',margin,y); y+=5;
-  const rankData=[...D.accordion_rio,...D.accordion_sp].sort((a,b)=>a.s-b.s);
+  const rankData=[...SRC.accordion_rio,...SRC.accordion_sp].sort((a,b)=>a.s-b.s);
   const rcols=[{x:margin,w:62,label:'Assistente',align:'left'},{x:margin+62,w:14,label:'Reg.',align:'center'},{x:margin+76,w:20,label:'Qtd',align:'right'},{x:margin+96,w:86,label:'Saldo Líquido (R$)',align:'right'}];
   const tW=W-margin*2;
   doc.setFillColor(61,31,82); doc.rect(margin,y,tW,7,'F');
@@ -571,10 +574,10 @@ async function exportPDF() {
     doc.setFillColor(...(i%2===0?[255,255,255]:[244,241,248])); doc.rect(margin,y,tW,7,'F');
     doc.setTextColor(30,18,40); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
     doc.text(row.a.length>32?row.a.substring(0,31)+'…':row.a,margin+1,y+5);
-    const rc=row.a in D.accordion_rio.reduce((o,r)=>{o[r.a]=1;return o;},{}) ? [36,113,163]:[30,122,74];
+    const rc=row.a in SRC.accordion_rio.reduce((o,r)=>{o[r.a]=1;return o;},{}) ? [36,113,163]:[30,122,74];
     doc.setFillColor(...rc); doc.roundedRect(margin+62,y+1,12,5,1,1,'F');
     doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(6);
-    const reg=D.accordion_rio.find(r=>r.a===row.a)?'RIO':'SP';
+    const reg=SRC.accordion_rio.find(r=>r.a===row.a)?'RIO':'SP';
     doc.text(reg,margin+68,y+4.5,{align:'center'});
     doc.setTextColor(30,18,40); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
     doc.text(row.q.toLocaleString('pt-BR'),margin+95,y+5,{align:'right'});
@@ -670,7 +673,8 @@ async function exportExcel() {
     }
 
     const wb = new ExcelJS.Workbook();
-    const k  = D.kpis;
+    const SRC = CURRENT || D; // use uploaded data if available
+    const k  = SRC.kpis;
 
     // ══ ABA 1: Resumo Executivo ═══════════════════════════════════════════
     const wsR = wb.addWorksheet('Resumo Executivo');
@@ -739,8 +743,8 @@ async function exportExcel() {
     aHdr.height = 20;
     [1,2,3,4].forEach(ci => Object.assign(aHdr.getCell(ci), hdrStyle()));
 
-    const rankData = [...D.accordion_rio.map(r=>({...r,reg:'RIO'})),
-                      ...D.accordion_sp.map(r=>({...r,reg:'SP'}))]
+    const rankData = [...SRC.accordion_rio.map(r=>({...r,reg:'RIO'})),
+                      ...SRC.accordion_sp.map(r=>({...r,reg:'SP'}))]
                     .sort((a,b)=>a.s-b.s);
     rankData.forEach((row,i) => {
       const isAlt=i%2===1, isRio=row.reg==='RIO';
@@ -772,8 +776,8 @@ async function exportExcel() {
     eHdr.height = 20;
     [1,2,3,4].forEach(ci => Object.assign(eHdr.getCell(ci), hdrStyle()));
 
-    D.monthly_labels.forEach((m,i) => {
-      const r = wsE.addRow([m, D.monthly_total[i], D.monthly_rio[i], D.monthly_sp[i]]);
+    SRC.monthly_labels.forEach((m,i) => {
+      const r = wsE.addRow([m, SRC.monthly_total[i], SRC.monthly_rio[i], SRC.monthly_sp[i]]);
       r.height = 16;
       const isAlt = i%2===1;
       [1,2,3,4].forEach(ci => {
