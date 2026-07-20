@@ -314,7 +314,9 @@ function renderAccordion(items, containerId, region) {
   const totalSaldo = items.reduce((s,i)=>s+i.s,0);
   metaEl.textContent = `${totalQtd.toLocaleString('pt-BR')} negativados | Saldo: ${fmtShort(totalSaldo)}`;
 
-  container.innerHTML = items.map((item, idx) => `
+  // Sort by saldo ascending (most negative = most devedor first)
+  const sortedItems = [...items].sort((a, b) => a.s - b.s);
+  container.innerHTML = sortedItems.map((item, idx) => `
     <div class="asst-item">
       <div class="asst-header" id="ah-${region}-${idx}" onclick="toggleAsst('${region}',${idx})">
         <span class="asst-name">${item.a}</span>
@@ -403,6 +405,15 @@ document.getElementById('file-input').addEventListener('change', async function(
     }
     if(rows.length>0) {
       ALL_ROWS = rows;
+      // Reset all filters when new file is loaded
+      filterSearch = ''; filterAsst = ''; filterLoja = ''; filterRegion = '';
+      document.getElementById('search').value = '';
+      document.getElementById('filter-asst').value = '';
+      document.getElementById('filter-loja').value = '';
+      document.querySelectorAll('.region-btn').forEach(b => {
+        b.className = 'region-btn';
+        if (b.dataset.region === '') b.classList.add('active-all');
+      });
       populateFilters(rows);
       const s = computeSummary(rows);
       renderKPIs(s.kpis); renderCharts(s);
@@ -423,7 +434,18 @@ function parseXlsx(buf) {
     const loja=String(r['Loja']||'');
     return {C:String(r['Corretor']||''),A:String(r['Assistente']||''),L:loja,
              R:loja.includes('Rio')?'RIO':'SP',V:parseFloat(r['Valor Liquido'])||0,
-             D:r['Baixados até'] instanceof Date ? r['Baixados até'].toLocaleDateString('pt-BR') : String(r['Baixados até']||'')};
+             D: (() => {
+        const v = r['Baixados até'];
+        if (v instanceof Date) return v.toLocaleDateString('pt-BR');
+        const s = String(v || '');
+        // Handle ISO format: 2025-11-05T23:59:59...
+        if (s.includes('T')) {
+          const [datePart] = s.split('T');
+          const [y,m,d] = datePart.split('-');
+          return d + '/' + m + '/' + y;
+        }
+        return s;
+      })()};
   });
 }
 function parseXml(text) {
@@ -443,7 +465,11 @@ function parseXml(text) {
     }
     const loja=obj['Loja']||'';
     result.push({C:obj['Corretor']||'',A:obj['Assistente']||'',L:loja,
-                  R:loja.includes('Rio')?'RIO':'SP',V:parseFloat(obj['Valor Liquido'])||0,D:obj['Baixados até']||''});
+                  R:loja.includes('Rio')?'RIO':'SP',V:parseFloat(obj['Valor Liquido'])||0,D:(() => {
+        const s = String(obj['Baixados até'] || '');
+        if (s.includes('T')) { const [dp]=s.split('T'); const [y,m,d]=dp.split('-'); return d+'/'+m+'/'+y; }
+        return s;
+      })()});
   }
   return result;
 }
