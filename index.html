@@ -625,39 +625,209 @@ async function exportPDF() {
   doc.save(`Negativados_${mesRef.replace('/','_')}.pdf`);
 }
 
-// ── EXPORT EXCEL ──────────────────────────────────────────────────────────────
-function exportExcel() {
-  const mesRef=getMesRef();
-  const wb=XLSX.utils.book_new();
-  const k=D.kpis;
+// ── EXPORT EXCEL (relatório completo estilizado) ──────────────────────────────
+async function exportExcel() {
+  document.getElementById('loader').classList.add('show');
+  try {
+    const mesRef = getMesRef();
+    const PURPLE = '3D1F52', GOLD = 'C9913A', WHITE = 'FFFFFFFF';
+    const RED = 'C0392B', RIO_BG = 'D4E6F1', SP_BG = 'D5F5E3';
+    const RIO_TXT = '2471A3', SP_TXT = '1E8449', ALT = 'EDE9F4';
+    const thinBorder = {
+      top:{style:'thin',color:{argb:'FFCFC8E0'}}, bottom:{style:'thin',color:{argb:'FFCFC8E0'}},
+      left:{style:'thin',color:{argb:'FFCFC8E0'}}, right:{style:'thin',color:{argb:'FFCFC8E0'}},
+    };
+    const medBorder = { bottom:{style:'medium',color:{argb:'FF'+GOLD}} };
 
-  // Resumo
-  const resumo=[['RELATÓRIO MENSAL DE NEGATIVADOS — AFFINITY CORRETORA'],['Período:',mesRef],['Gerado em:',new Date().toLocaleDateString('pt-BR')],[],
-    ['RESUMO EXECUTIVO'],['Indicador','Valor'],['Total de Registros',k.total],['Saldo Total (R$)',k.saldo],
-    ['RIO — Registros',k.rio],['RIO — Saldo (R$)',k.saldo_rio],['SP — Registros',k.sp],['SP — Saldo (R$)',k.saldo_sp]];
-  const wsR=XLSX.utils.aoa_to_sheet(resumo); wsR['!cols']=[{wch:35},{wch:22}];
-  XLSX.utils.book_append_sheet(wb,wsR,'Resumo Executivo');
+    function hdrStyle(wb) {
+      return { font:{bold:true,color:{argb:WHITE},name:'Arial',size:10},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+PURPLE}},
+               alignment:{vertical:'middle',horizontal:'center',wrapText:true},
+               border: medBorder };
+    }
+    function titleStyle() {
+      return { font:{bold:true,color:{argb:WHITE},name:'Arial',size:13},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+PURPLE}},
+               alignment:{vertical:'middle',horizontal:'left'} };
+    }
+    function sectionStyle() {
+      return { font:{bold:true,color:{argb:'FF'+PURPLE},name:'Arial',size:10},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FFEDE9F4'}},
+               alignment:{vertical:'middle'} };
+    }
+    function metaLabel() {
+      return { font:{bold:true,color:{argb:'FF'+PURPLE},name:'Arial',size:9},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FFF4F1F8'}} };
+    }
+    function metaVal() {
+      return { font:{color:{argb:'FF1E1228'},name:'Arial',size:9},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FFF4F1F8'}} };
+    }
+    function dataCell(isAlt, color) {
+      return { font:{name:'Arial',size:9,color:{argb:'FF'+(color||'1E1228')}},
+               fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(isAlt?ALT:'FFFFFF')}},
+               border:thinBorder, alignment:{vertical:'middle'} };
+    }
 
-  // Ranking assistentes
-  const rankHdr=[['#','Assistente','Região','Qtd Negativados','Saldo Líquido (R$)']];
-  const rankRows=[...D.accordion_rio,...D.accordion_sp].sort((a,b)=>a.s-b.s)
-    .map((r,i)=>[i+1,r.a,D.accordion_rio.find(x=>x.a===r.a)?'RIO':'SP',r.q,r.s]);
-  const wsK=XLSX.utils.aoa_to_sheet([...rankHdr,...rankRows]); wsK['!cols']=[{wch:5},{wch:30},{wch:8},{wch:16},{wch:22}];
-  XLSX.utils.book_append_sheet(wb,wsK,'Ranking Assistentes');
+    const wb = new ExcelJS.Workbook();
+    const k  = D.kpis;
 
-  // Evolução mensal
-  const evolHdr=[['Mês','Total','RIO','SP']];
-  const evolRows=D.monthly_labels.map((m,i)=>[m,D.monthly_total[i],D.monthly_rio[i],D.monthly_sp[i]]);
-  const wsE=XLSX.utils.aoa_to_sheet([...evolHdr,...evolRows]); wsE['!cols']=[{wch:12},{wch:10},{wch:10},{wch:10}];
-  XLSX.utils.book_append_sheet(wb,wsE,'Evolução Mensal');
+    // ══ ABA 1: Resumo Executivo ═══════════════════════════════════════════
+    const wsR = wb.addWorksheet('Resumo Executivo');
+    wsR.columns = [{wch:35},{wch:30},{wch:16},{wch:16}].map(c=>({width:c.wch}));
 
-  // Corretores
-  const corrHdr=[['Corretor','Assistente','Loja','Região','Saldo Líquido (R$)','Baixados até']];
-  const corrRows=[...ALL_ROWS].sort((a,b)=>a.V-b.V).map(r=>[r.C,r.A,r.L,r.R,r.V,r.D]);
-  const wsC=XLSX.utils.aoa_to_sheet([...corrHdr,...corrRows]); wsC['!cols']=[{wch:45},{wch:25},{wch:28},{wch:8},{wch:22},{wch:14}];
-  XLSX.utils.book_append_sheet(wb,wsC,'Corretores Negativados');
+    // Title
+    wsR.addRow(['RELATÓRIO MENSAL DE NEGATIVADOS — AFFINITY CORRETORA','','','']);
+    wsR.mergeCells('A1:D1');
+    Object.assign(wsR.getCell('A1'), { font:{bold:true,color:{argb:WHITE},name:'Arial',size:14},
+      fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+PURPLE}},
+      alignment:{vertical:'middle',horizontal:'left'} });
+    wsR.getRow(1).height = 28;
 
-  XLSX.writeFile(wb,`Negativados_${mesRef.replace('/','_')}.xlsx`);
+    // Meta
+    [['Período de referência:', mesRef], ['Gerado em:', new Date().toLocaleDateString('pt-BR')]].forEach(([l,v]) => {
+      const r = wsR.addRow([l,v,'','']);
+      wsR.mergeCells(`B${r.number}:D${r.number}`);
+      Object.assign(r.getCell(1), metaLabel());
+      Object.assign(r.getCell(2), metaVal());
+      r.height = 16;
+    });
+    wsR.addRow([]);
+
+    // KPI section header
+    const kpiHdr = wsR.addRow(['RESUMO EXECUTIVO','','','']);
+    wsR.mergeCells(`A${kpiHdr.number}:D${kpiHdr.number}`);
+    Object.assign(wsR.getCell(`A${kpiHdr.number}`), sectionStyle());
+    kpiHdr.height = 20;
+
+    // KPI col headers
+    const kpiColHdr = wsR.addRow(['Indicador','Valor','','']);
+    wsR.mergeCells(`C${kpiColHdr.number}:D${kpiColHdr.number}`);
+    [1,2].forEach(ci => Object.assign(kpiColHdr.getCell(ci), hdrStyle()));
+    kpiColHdr.height = 20;
+
+    const kpiRows = [
+      ['Total de Registros', k.total],
+      ['Saldo Total (R$)',   k.saldo],
+      ['RIO — Registros',   k.rio],
+      ['RIO — Saldo (R$)',  k.saldo_rio],
+      ['SP — Registros',    k.sp],
+      ['SP — Saldo (R$)',   k.saldo_sp],
+    ];
+    kpiRows.forEach(([lbl,val],i) => {
+      const isAlt = i%2===1, isSaldo = lbl.includes('Saldo'), isNeg = val<0;
+      const r = wsR.addRow([lbl, val,'','']);
+      wsR.mergeCells(`C${r.number}:D${r.number}`);
+      Object.assign(r.getCell(1), dataCell(isAlt));
+      const c2 = r.getCell(2);
+      Object.assign(c2, dataCell(isAlt, isSaldo&&isNeg ? RED : '1E1228'));
+      if (isSaldo) { c2.numFmt = 'R$ #,##0.00'; c2.font.bold = isNeg; }
+      else { c2.alignment = {vertical:'middle',horizontal:'right'}; }
+      r.height = 16;
+    });
+
+    // ══ ABA 2: Ranking Assistentes ════════════════════════════════════════
+    const wsA = wb.addWorksheet('Ranking Assistentes');
+    wsA.columns = [{width:32},{width:10},{width:14},{width:22}];
+
+    wsA.addRow(['RANKING — ASSISTENTES COM MAIOR SALDO NEGATIVO','','','']);
+    wsA.mergeCells('A1:D1');
+    Object.assign(wsA.getCell('A1'), titleStyle());
+    wsA.getRow(1).height = 24;
+
+    const aHdr = wsA.addRow(['#','Assistente','Região','Saldo Líquido (R$)']);
+    aHdr.height = 20;
+    [1,2,3,4].forEach(ci => Object.assign(aHdr.getCell(ci), hdrStyle()));
+
+    const rankData = [...D.accordion_rio.map(r=>({...r,reg:'RIO'})),
+                      ...D.accordion_sp.map(r=>({...r,reg:'SP'}))]
+                    .sort((a,b)=>a.s-b.s);
+    rankData.forEach((row,i) => {
+      const isAlt=i%2===1, isRio=row.reg==='RIO';
+      const r = wsA.addRow([i+1, row.a, row.reg, row.s]);
+      r.height = 16;
+      Object.assign(r.getCell(1), {...dataCell(isAlt), alignment:{vertical:'middle',horizontal:'center'}});
+      Object.assign(r.getCell(2), dataCell(isAlt));
+      const regCell = r.getCell(3);
+      Object.assign(regCell, {
+        font:{name:'Arial',size:9,bold:true,color:{argb:'FF'+(isRio?RIO_TXT:SP_TXT)}},
+        fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(isRio?RIO_BG:SP_BG)}},
+        border:thinBorder, alignment:{vertical:'middle',horizontal:'center'}
+      });
+      const sCell = r.getCell(4);
+      Object.assign(sCell, {...dataCell(isAlt, RED), numFmt:'R$ #,##0.00',
+        alignment:{vertical:'middle',horizontal:'right'}, font:{name:'Arial',size:9,bold:true,color:{argb:'FF'+RED}}});
+    });
+
+    // ══ ABA 3: Evolução Mensal ════════════════════════════════════════════
+    const wsE = wb.addWorksheet('Evolução Mensal');
+    wsE.columns = [{width:14},{width:10},{width:10},{width:10}];
+
+    wsE.addRow(['EVOLUÇÃO MENSAL — BAIXADOS ATÉ','','','']);
+    wsE.mergeCells('A1:D1');
+    Object.assign(wsE.getCell('A1'), titleStyle());
+    wsE.getRow(1).height = 24;
+
+    const eHdr = wsE.addRow(['Mês','Total','RIO','SP']);
+    eHdr.height = 20;
+    [1,2,3,4].forEach(ci => Object.assign(eHdr.getCell(ci), hdrStyle()));
+
+    D.monthly_labels.forEach((m,i) => {
+      const r = wsE.addRow([m, D.monthly_total[i], D.monthly_rio[i], D.monthly_sp[i]]);
+      r.height = 16;
+      const isAlt = i%2===1;
+      [1,2,3,4].forEach(ci => {
+        const c = r.getCell(ci);
+        Object.assign(c, {...dataCell(isAlt), alignment:{vertical:'middle',horizontal:'center'}});
+        if (ci===3) c.font.color = {argb:'FF'+RIO_TXT};
+        if (ci===4) c.font.color = {argb:'FF'+SP_TXT};
+      });
+    });
+
+    // ══ ABA 4: Corretores ═════════════════════════════════════════════════
+    const wsC = wb.addWorksheet('Corretores Negativados');
+    wsC.columns = [{width:46},{width:26},{width:29},{width:9},{width:22},{width:14}];
+
+    wsC.addRow(['LISTA COMPLETA DE CORRETORES NEGATIVADOS','','','','','']);
+    wsC.mergeCells('A1:F1');
+    Object.assign(wsC.getCell('A1'), titleStyle());
+    wsC.getRow(1).height = 24;
+
+    const cHdr = wsC.addRow(['Corretor','Assistente','Loja','Região','Saldo Líquido (R$)','Baixados até']);
+    cHdr.height = 22;
+    [1,2,3,4,5,6].forEach(ci => Object.assign(cHdr.getCell(ci), hdrStyle()));
+
+    const sortedRows = [...ALL_ROWS].sort((a,b)=>a.V-b.V);
+    sortedRows.forEach((row,i) => {
+      const isAlt=i%2===1, isRio=row.R==='RIO', isNeg=row.V<0;
+      const r = wsC.addRow([row.C, row.A, row.L, row.R, row.V, row.D]);
+      r.height = 16;
+      [1,2,3,6].forEach(ci => Object.assign(r.getCell(ci), dataCell(isAlt)));
+      const regCell = r.getCell(4);
+      Object.assign(regCell, {
+        font:{name:'Arial',size:9,bold:true,color:{argb:'FF'+(isRio?RIO_TXT:SP_TXT)}},
+        fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(isRio?RIO_BG:SP_BG)}},
+        border:thinBorder, alignment:{vertical:'middle',horizontal:'center'}
+      });
+      const sCell = r.getCell(5);
+      Object.assign(sCell, {
+        font:{name:'Arial',size:9,bold:isNeg,color:{argb:'FF'+(isNeg?RED:'1E1228')}},
+        fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(isAlt?ALT:'FFFFFF')}},
+        border:thinBorder, alignment:{vertical:'middle',horizontal:'right'},
+        numFmt:'R$ #,##0.00'
+      });
+    });
+
+    // ── Download ──────────────────────────────────────────────────────────
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob   = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement('a');
+    a.href = url; a.download = `Negativados_${mesRef.replace('/','_')}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+
+  } catch(err) { console.error(err); alert('Erro: '+err.message); }
+  document.getElementById('loader').classList.remove('show');
 }
 
 // ── EXPORT TABLE (filtered view) ─────────────────────────────────────────────
