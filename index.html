@@ -477,7 +477,11 @@ function parseXml(text) {
 }
 function computeSummary(rows) {
   const rio=rows.filter(r=>r.R==='RIO'), sp=rows.filter(r=>r.R==='SP');
-  const MONTHS=D.monthly_labels;
+  // Derive months dynamically from actual data (last 8 months present)
+  const monthSet = new Set();
+  rows.forEach(r=>{ const p=r.D.split('/'); if(p.length===3) monthSet.add(`${p[2]}-${p[1]}`); });
+  const allMonths = [...monthSet].filter(m=>/^\d{4}-\d{2}$/.test(m)).sort();
+  const MONTHS = allMonths.slice(-8);
   function mc(arr){ return MONTHS.map(m=>arr.filter(r=>{const p=r.D.split('/');return p.length===3&&`${p[2]}-${p[1]}`===m;}).length); }
   function buildAcc(arr){
     const map={};
@@ -981,9 +985,19 @@ async function exportTableExcel() {
   document.getElementById('loader').classList.remove('show');
 }
 
-// ── BOOT// ── BOOT// ── BOOT ──────────────────────────────────────────────────────────────────────
-ALL_ROWS = D.rows.map(r=>{return {C:r.C,A:r.A,L:r.L,R:r.R,V:r.V,D:r.D};});
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+ALL_ROWS = D.rows.map(r=>({C:r.C,A:r.A,L:r.L,R:r.R,V:r.V,D:r.D}));
 populateFilters(ALL_ROWS);
+// Set CURRENT from embedded data so exports always reflect actual loaded data
+CURRENT = {
+  kpis: D.kpis,
+  monthly_labels: D.monthly_labels,
+  monthly_total:  D.monthly_total,
+  monthly_rio:    D.monthly_rio,
+  monthly_sp:     D.monthly_sp,
+  accordion_rio:  D.accordion_rio,
+  accordion_sp:   D.accordion_sp,
+};
 renderKPIs(D.kpis);
 renderCharts({...D,kpis:D.kpis});
 renderAccordion(D.accordion_rio,'body-rio','RIO');
